@@ -130,9 +130,13 @@ class KeyView(mixins.RetrieveModelMixin, generics.GenericAPIView):
         return self.retrieve(request, *args, **kwargs)
 
 
-class KeyPostView(mixins.CreateModelMixin, generics.GenericAPIView):
+class KeyViewP(mixins.CreateModelMixin, mixins.UpdateModelMixin, generics.GenericAPIView):
+    queryset = models.Key.objects.all()
     serializer_class = serializers.KeySerializer
     permission_classes = (permissions.IsAuthenticated, )
+
+    def perform_create(self, serializer):
+        serializer.save(content_id=self.content_id, is_revoked=False)
 
     def post(self, request, *args, **kwargs):
         content = get_object_or_404(models.Content.objects.all(), pk=kwargs.get("content_id"))
@@ -144,5 +148,23 @@ class KeyPostView(mixins.CreateModelMixin, generics.GenericAPIView):
         self.content_id = int(kwargs.get("content_id", -1))
         return self.create(request, *args, **kwargs)
 
-    def perform_create(self, serializer):
-        serializer.save(content_id=self.content_id)
+    def put(self, request, *args, **kwargs):
+        return self.partial_update(request, *args, **kwargs)
+
+
+class KeyViewD(mixins.DestroyModelMixin, generics.GenericAPIView):
+    queryset = models.Key.objects.all()
+    serializer_class = serializers.KeySerializer
+    permission_classes = (permissions.IsAuthenticated, )
+    lookup_field = 'content_id'
+
+    def delete(self, request, *args, **kwargs):
+        content = get_object_or_404(models.Content.objects.all(), pk=kwargs.get("content_id"))
+        if content is None:
+            raise Http404
+
+        if request.user != content.owner:
+            raise PermissionDenied("You are not the owner")
+
+        self.queryset = self.queryset.filter(user__username=kwargs.pop("username", None))
+        return self.destroy(request, *args, **kwargs)

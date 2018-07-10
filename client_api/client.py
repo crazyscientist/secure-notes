@@ -15,6 +15,18 @@ import code
 
 
 class AESKey(object):
+    """
+    Wrapper for AES key
+
+    This object is a convenience wrapper for :py:class:`Crypto.Cipher.AES`
+
+    :param key: bytes-representation of the AES key.
+    :type key: byte
+    :param iv: byte-representation of the initialization vector
+    :type iv: byte
+    :param logger: A logging instance
+    :type logger: :py:obj:`logging.Logger`
+    """
     def __init__(self, key=None, iv=None, logger=None):
         self.key = key or os.urandom(NotesAPIClient.AES_KEYSIZE)
         self.iv = iv or os.urandom(AES.block_size)
@@ -22,19 +34,51 @@ class AESKey(object):
         self.aeskey = None
 
     def reset(self):
+        """
+        Reset to mint condition
+        """
         self.logger.debug("length of key: {}".format(len(self.key)))
         self.logger.debug("length of iv: {}".format(len(self.iv)))
         self.aeskey = AES.new(self.key, AES.MODE_CFB, self.iv)
 
     def encrypt(self, text):
+        """
+        Encrypt ``text``
+
+        - Resets the AES key
+        - encrypts the supplied text with the AES key
+        - encodes the encrypted text with Base64
+
+        :param text: bytestring to be encoded
+        :type text: byte
+        :return: Base64-encoded and encrypted text
+        :rtype: byte
+        """
         self.reset()
-        return self.aeskey.encrypt(text)
+        return base64.b64encode(self.aeskey.encrypt(text))
 
     def decrypt(self, text):
+        """
+        Decrypt ``text``
+
+        - Resets the AES key
+        - decodes the supplied text with Base64
+        - decrypts the the decoded and encrypted text
+
+        :param text: base64-encoded and encrypted text
+        :type text: byte
+        :return: decoded and decrypted text
+        :rtype: byte
+        """
         self.reset()
-        return self.aeskey.decrypt(text)
+        return self.aeskey.decrypt(base64.b64decode(text))
 
     def get_secret(self):
+        """
+        Return key and initialization vector
+        :return: bytestring consisting of iv and key
+        :rtype: byte
+        """
         return self.iv + self.key
 
 
@@ -150,7 +194,7 @@ class NotesAPIClient(object):
         aeskey = AESKey()
         data = {
             'title': title,
-            'content': base64.b64encode(aeskey.encrypt(content))
+            'content': aeskey.encrypt(content)
         }
 
         response = requests.post(
@@ -260,9 +304,45 @@ class NotesAPIClient(object):
             return None
 
         content = self._get_content(response.content)
-        content["content"] = aeskey.decrypt(base64.b64decode(content.get("content", "")))
+        content["content"] = aeskey.decrypt(content.get("content", ""))
 
         return content
+
+    def share_note(self, pk, username):
+        """
+        Share AES key with user ``username``
+
+        :param pk: ID of the note to be shared
+        :param username: username of the receiving user
+        :return: ``0`` if successful, otherwise ``1``
+        """
+        if self.rsa_key is None:
+            self.rsa_key = self.get_rsa_key()
+
+        aeskey = self.download_aes_key(pk)
+        return self.upload_aes_key(aeskey, pk, username)
+
+    def unshare_note(self, pk, username):
+        raise NotImplementedError("TODO: Implement it.")
+
+    def delete_note(self, pk):
+        """
+        Delete note from server
+
+        :param pk: ID of the note to be deleted
+        :type pk: int
+        :return: ``0`` if successful, otherwise ``1``
+        """
+        response = requests.delete(
+            urllib.parse.urljoin(self.base_url, "note/{}/".format(pk)),
+            auth=(self.username, self.password)
+        )
+
+        if response.status_code != 204:
+            return 1
+
+        self.logger.debug("OK")
+        return 0
 
 
 if __name__ == '__main__':
