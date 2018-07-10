@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import base64
 import json
 import logging
 import urllib.parse
@@ -14,12 +15,15 @@ import code
 
 
 class AESKey(object):
-    def __init__(self, key=None, iv=None):
+    def __init__(self, key=None, iv=None, logger=None):
         self.key = key or os.urandom(NotesAPIClient.AES_KEYSIZE)
         self.iv = iv or os.urandom(AES.block_size)
+        self.logger = logger or logging.getLogger("NotesClient.AES")
         self.aeskey = None
 
     def reset(self):
+        self.logger.debug("length of key: {}".format(len(self.key)))
+        self.logger.debug("length of iv: {}".format(len(self.iv)))
         self.aeskey = AES.new(self.key, AES.MODE_CFB, self.iv)
 
     def encrypt(self, text):
@@ -55,7 +59,7 @@ class NotesAPIClient(object):
         self.rsa_key = None
 
     def __call__(self, *args, **kwargs):
-        self.get_rsa_key()
+        self.get_note(15)
 
     def _get_content(self, jsonstring):
         """
@@ -146,7 +150,7 @@ class NotesAPIClient(object):
         aeskey = AESKey()
         data = {
             'title': title,
-            'content': aeskey.encrypt(content)
+            'content': base64.b64encode(aeskey.encrypt(content))
         }
 
         response = requests.post(
@@ -167,7 +171,7 @@ class NotesAPIClient(object):
 
         return self.upload_aes_key(aeskey, content.get("id"))
 
-    def upload_aes_key(self, aeskey, pk, username=None, rsakey=None):
+    def upload_aes_key(self, aeskey, pk, username=None):
         """
         Upload AES key ``aeskey`` that was used to encrypt note with id ``pk``
 
@@ -175,26 +179,90 @@ class NotesAPIClient(object):
         :type aeskey: :py:obj:`AESKey`
         :param pk: ID for the encrypted content that was given by the server
         :type pk: int
-        :param username:
-        :param rsakey:
-        :return:
+        :param username: Name of the user whose public RSA key is used to encrypt the AES key
+        :return: ``0`` if successful, otherwise ``1``
         """
+        if username is None:
+            rsakey = self.rsa_key
+        else:
+            rsakey = self.get_rsa_key(username)
+
         username = username or self.username
-        rsakey = rsakey or self.rsa_key
 
         data = {
             'user': username,
-            'key': rsakey.encrypt(aeskey.get_secret(), b"0")
+            'key': base64.b64encode(rsakey.encrypt(aeskey.get_secret(), b"0")[0])
         }
 
         response = requests.post(
-            urllib.parse.urljoin(self.base_url, "note/{}/setkey".format(pk)),
+            urllib.parse.urljoin(self.base_url, "note/{}/setkey/".format(pk)),
             auth=(self.username, self.password),
             data=data
         )
 
         if response.status_code != 201:
             self.logger.error("Failed to upload AES key: {}".format(response.content))
+            return 1
+
+        self.logger.debug("OK")
+        return 0
+
+    def download_aes_key(self, pk):
+        """
+        Download AES key for note with id ``pk``
+
+        :param pk: ID of the note on server
+        :return: AES key or ``None``
+        :rtype: :py:obj:`AESKey`
+        """
+        response = requests.get(
+            urllib.parse.urljoin(self.base_url, "note/{}/getkey".format(pk)),
+            auth=(self.username, self.password)
+        )
+
+        if response.status_code != 200:
+            return None
+
+        content = self._get_content(response.content)
+
+        if "key" not in content:
+            return None
+
+        print("DEBUG", content)
+        content["key"] = self.rsa_key.decrypt(base64.b64decode(content["key"]))
+
+        aeskey = AESKey(
+            iv=content["key"][:AES.block_size],
+            key=content["key"][AES.block_size:]
+        )
+        return aeskey
+
+    def get_note(self, pk):
+        """
+        Get note with unencrypted content from server
+
+        :param pk: ID of the note on the server
+        :return: dict or ``None``
+        """
+        if self.rsa_key is None:
+            self.rsa_key = self.get_rsa_key()
+
+        aeskey = self.download_aes_key(pk)
+        if aeskey is None:
+            return None
+
+        response = requests.get(
+            urllib.parse.urljoin(self.base_url, "note/{}/".format(pk)),
+            auth=(self.username, self.password)
+        )
+
+        if response.status_code != 200:
+            return None
+
+        content = self._get_content(response.content)
+        content["content"] = aeskey.decrypt(base64.b64decode(content.get("content", "")))
+
+        return content
 
 
 if __name__ == '__main__':
