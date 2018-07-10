@@ -1,19 +1,29 @@
+from django.contrib.auth import models as authmodels
 from rest_framework import serializers
 from notes import models
 
 
+class UserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = authmodels.User
+        fields = ('username', )
+
+
 class KeySerializer(serializers.ModelSerializer):
+    user = serializers.SlugRelatedField(queryset=authmodels.User.objects.all(), slug_field="username")
+    key = serializers.CharField()
+
     class Meta:
         model = models.Key
-        fields = ('key',)
+        fields = ('key', 'user')
 
 
 class ContentSerializer(serializers.ModelSerializer):
-    aeskey = KeySerializer(read_only=True, many=True)
+    owner = serializers.SlugRelatedField(slug_field="username", read_only=True)
 
     class Meta:
         model = models.Content
-        fields = ('title', 'content', 'aeskey')
+        fields = ('title', 'content', 'id', 'owner')
 
 
 class CryptoKeySerializer(serializers.ModelSerializer):

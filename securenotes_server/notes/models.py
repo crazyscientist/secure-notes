@@ -16,7 +16,7 @@ class Content(models.Model):
 
 class Key(models.Model):
     content = models.ForeignKey(Content, help_text="Encrypted content", null=False, blank=False, on_delete=models.CASCADE, related_name="aeskey")
-    key = models.CharField(max_length=constants.CIPHER_AES_KEYSIZE, help_text="Encrypted key", null=False, blank=False)
+    key = models.CharField(max_length=constants.CIPHER_AES_KEYSIZE+constants.CIPHER_AES_BLOCKSIZE, help_text="Encrypted key", null=False, blank=False)
     user = models.ForeignKey(authmodels.User, null=False, blank=False, on_delete=models.CASCADE)
     is_revoked = models.BooleanField(help_text="Set to revoke access", default=False)
 
