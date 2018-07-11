@@ -2,9 +2,8 @@ from django.db import transaction
 from django.db.utils import IntegrityError
 from django.core.exceptions import ValidationError
 from django.http import Http404
-from django.contrib.auth import models as authmodels
-from rest_framework import exceptions, generics, mixins, permissions, status, viewsets
-from rest_framework.response import Response
+from django.db.models import Q
+from rest_framework import exceptions, generics, mixins, permissions, viewsets
 from rest_framework.exceptions import PermissionDenied
 
 from notes import models, serializers
@@ -116,7 +115,13 @@ class ContentView(mixins.UpdateModelMixin, mixins.DestroyModelMixin, mixins.Retr
         if request.user != content.owner:
             raise PermissionDenied("You are not the owner")
 
+    def check_allowed(self, request, *args, **kwargs):
+        content = get_object_or_404(self.queryset.filter(Q(owner=request.user)|Q(aeskey__user=request.user, aeskey__is_revoked=False)), pk=kwargs.get("pk"))
+        if content is None:
+            raise Http404
+
     def get(self, request, *args, **kwargs):
+        self.check_allowed(request, *args, **kwargs)
         return self.retrieve(request, *args, **kwargs)
 
     def put(self, request, *args, **kwargs):

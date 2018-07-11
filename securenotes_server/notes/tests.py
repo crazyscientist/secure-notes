@@ -1,18 +1,24 @@
 import base64
 import json
 import os
+import random
+import string
 
 from django.test import TestCase
 from django.contrib.auth import models as authmodels
 from django.core.exceptions import ObjectDoesNotExist
 from django.urls.base import reverse
 
-from rest_framework.test import APIClient, APIRequestFactory, force_authenticate
+from rest_framework.test import APIClient, APIRequestFactory
 from notes import models
 
 
 # Create your tests here.
 class NotesTest(TestCase):
+
+    @staticmethod
+    def _get_random(length):
+        return ''.join([random.choice(string.ascii_letters) for x in range(length)])
 
     def setUp(self):
         self.testuser = authmodels.User.objects.get_or_create(username="testsuer", password="password")[0]
@@ -326,3 +332,184 @@ class NotesTest(TestCase):
                 authmodels.User.objects.get_or_create(username=user)[0],
                 username
             )
+
+    def test_content_add(self):
+        self.client.force_authenticate(user=self.testuser)
+        data = {"title": "hallo", "content": self._get_random(64)}
+        response = self.client.post(
+            reverse("note_add"),
+            data
+        )
+
+        self.assertEqual(response.status_code, 201)
+        content = models.Content.objects.get(**data)
+        self.assertEqual(content.title, data["title"])
+        self.assertEqual(content.content, data["content"])
+        self.assertEqual(content.owner, self.testuser)
+
+    def test_content_add_otheruser(self):
+        testuser = authmodels.User.objects.create(username="ttt", password="ppp")
+        self.client.force_authenticate(user=self.testuser)
+        data = {
+            "title": "hallo",
+            "content": os.urandom(32).decode("utf8", "backslashreplace"),
+            "owner": testuser.pk
+        }
+        response = self.client.post(
+            reverse("note_add"),
+            data
+        )
+        content = json.loads(response.content)
+
+        self.assertEqual(response.status_code, 201)
+        self.assertRaises(ObjectDoesNotExist, models.Content.objects.get, **data)
+        self.assertEqual(content["title"], data["title"])
+        self.assertEqual(content["content"], data["content"])
+        self.assertEqual(content["owner"], self.testuser.username)
+
+    def test_content_put(self):
+        def basetest(org, data, user, expected, fake_pk=None):
+            content = models.Content.objects.get_or_create(**org)[0]
+            original_owner = content.owner
+            self.client.force_authenticate(user=user)
+            pk = fake_pk or content.pk
+            response = self.client.put(
+                reverse("note", args=[pk]),
+                data=data
+            )
+            self.assertEqual(response.status_code, expected, response.content)
+            if content.owner.username == user.username and fake_pk is None:
+                cmp_data = data
+            else:
+                cmp_data = org
+            content = models.Content.objects.get(pk=content.pk)
+            self.assertEqual(content.title, cmp_data.get("title", content.title))
+            self.assertEqual(content.content, cmp_data.get("content", content.content))
+            self.assertEqual(content.owner, original_owner)
+
+        testuser = authmodels.User.objects.create(username="t", password="p")
+        org = {
+            "title": "title" + self._get_random(32),
+            "content": "content" + self._get_random(32),
+            "owner": self.testuser
+        }
+
+        for data, username, expected, pk in [
+            [{"title": self._get_random(16)}, self.testuser.username, 200, None],
+            [{"content": self._get_random(16)}, self.testuser.username, 200, None],
+            [{"title": self._get_random(16), "content": self._get_random(16)}, self.testuser.username, 200, None],
+            [{"title": self._get_random(16), "owner": testuser.username}, self.testuser.username, 200, None],
+            [{"title": self._get_random(16)}, self.testuser.username, 404, 99],
+            [{"title": self._get_random(16)}, testuser.username, 403, None],
+        ]:
+            basetest(org, data, authmodels.User.objects.get_or_create(username=username)[0], expected, pk)
+
+    def test_content_delete(self):
+        content = models.Content.objects.create(
+            title="title",
+            content="content",
+            owner=self.testuser
+        )
+        key = models.Key.objects.create(
+            content=content,
+            user=self.testuser,
+            key="secret"
+        )
+
+        self.client.force_authenticate(user=self.testuser)
+        response = self.client.delete(reverse("note", args=[content.pk,]))
+        self.assertEqual(response.status_code, 204)
+        self.assertRaises(ObjectDoesNotExist, models.Content.objects.get, pk=content.pk)
+        self.assertRaises(ObjectDoesNotExist, models.Key.objects.get, pk=key.pk)
+
+    def test_content_delete_otheruser(self):
+        content = models.Content.objects.create(
+            title="title",
+            content="content",
+            owner=self.testuser
+        )
+        key = models.Key.objects.create(
+            content=content,
+            user=self.testuser,
+            key="secret"
+        )
+        testuser = authmodels.User.objects.create(username="t", password="p")
+        self.client.force_authenticate(user=testuser)
+        response = self.client.delete(reverse("note", args=[content.pk,]))
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(models.Content.objects.filter(pk=content.pk).count(), 1)
+        self.assertEqual(models.Key.objects.filter(pk=key.pk).count(), 1)
+
+    def test_content_delete_nonexistent(self):
+        self.client.force_authenticate(user=self.testuser)
+        response = self.client.delete(reverse("note", args=[99,]))
+        self.assertEqual(response.status_code, 404)
+
+    def test_content_get(self):
+        self.client.force_authenticate(user=self.testuser)
+        response = self.client.get(reverse("note", args=[self.testnote.pk]))
+        self.assertEqual(response.status_code, 200)
+
+    def test_content_get_prohibit(self):
+        testuser = authmodels.User.objects.create(username="u")
+        self.client.force_authenticate(user=testuser)
+        response = self.client.get(reverse("note", args=[self.testnote.pk]))
+        self.assertEqual(response.status_code, 404)
+
+    def test_content_get_unauth(self):
+        self.client.force_authenticate()
+        response = self.client.get(reverse("note", args=[self.testnote.pk]))
+        self.assertEqual(response.status_code, 403, response.content)
+
+    def test_content_get_shared(self):
+        user = authmodels.User.objects.create(username="foobar")
+
+        self.client.force_authenticate(user=user)
+        response = self.client.get(reverse("note", args=[self.testnote.pk]))
+        self.assertEqual(response.status_code, 404)
+
+        key = models.Key.objects.create(content=self.testnote, user=user, key="secret2")
+        response = self.client.get(reverse("note", args=[self.testnote.pk]))
+        self.assertEqual(response.status_code, 200)
+
+        models.Key.objects.filter(pk=key.pk).update(is_revoked=True)
+        response = self.client.get(reverse("note", args=[self.testnote.pk]))
+        self.assertEqual(response.status_code, 404)
+
+    def test_content_get_multiple(self):
+        otheruser = authmodels.User.objects.create(username="other")
+        testnote2 = models.Content.objects.create(
+            title="title2",
+            content="content2",
+            owner=self.testuser
+        )
+        testnote3 = models.Content.objects.create(
+            title="title3",
+            content="content3",
+            owner=otheruser
+        )
+        key3 = models.Key.objects.create(
+            content=testnote3,
+            user=otheruser,
+            key="secret"
+        )
+
+        self.client.force_authenticate(user=otheruser)
+        response = self.client.get(reverse("getnotes"))
+
+        self.assertEqual(response.status_code, 200)
+        content = json.loads(response.content)
+        self.assertEqual(content.get("count"), 1)
+        self.assertEqual(content.get("results", [{}])[0].get("id", -1), testnote3.pk)
+
+        key2 = models.Key.objects.create(
+            content=testnote2,
+            user=otheruser,
+            key="secret"
+        )
+
+        response = self.client.get(reverse("getnotes"))
+
+        self.assertEqual(response.status_code, 200)
+        content = json.loads(response.content)
+        self.assertEqual(content.get("count"), 2)

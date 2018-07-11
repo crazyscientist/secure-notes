@@ -9,9 +9,7 @@ import sys
 
 from Crypto.PublicKey import RSA
 from Crypto.Cipher import AES
-from Crypto import Random
 import requests
-import code
 
 
 class AESKey(object):
