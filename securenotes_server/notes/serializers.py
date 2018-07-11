@@ -10,11 +10,11 @@ class UserSerializer(serializers.ModelSerializer):
 
 
 class KeySerializer(serializers.ModelSerializer):
-    user = serializers.SlugRelatedField(queryset=authmodels.User.objects.all(), slug_field="username")
+    user = serializers.SlugRelatedField(read_only=True, slug_field="username")
 
     class Meta:
         model = models.Key
-        fields = ('key', 'user',)
+        fields = ('key', 'user', 'is_revoked')
 
 
 class KeyPutSerializer(serializers.ModelSerializer):
