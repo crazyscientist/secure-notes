@@ -1,5 +1,6 @@
 from django.db import transaction
 from django.db.utils import IntegrityError
+from django.contrib.auth import models as authmodels
 from django.core.exceptions import ValidationError
 from django.http import Http404
 from django.db.models import Q
@@ -7,6 +8,7 @@ from rest_framework import exceptions, generics, mixins, permissions, viewsets
 from rest_framework.exceptions import PermissionDenied
 
 from notes import models, serializers
+from notes import mixins as mymixins
 from django.shortcuts import get_object_or_404 as _get_object_or_404
 
 
@@ -133,11 +135,12 @@ class ContentView(mixins.UpdateModelMixin, mixins.DestroyModelMixin, mixins.Retr
         return self.destroy(request, *args, **kwargs)
 
 
-class KeyView(mixins.RetrieveModelMixin, mixins.CreateModelMixin, mixins.UpdateModelMixin, mixins.DestroyModelMixin, viewsets.GenericViewSet):
+class KeyView(mixins.RetrieveModelMixin, mixins.CreateModelMixin, mixins.UpdateModelMixin, mixins.DestroyModelMixin, mymixins.MultipleFieldLookupMixin, viewsets.GenericViewSet):
     queryset = models.Key.objects.all()
     serializer_class = serializers.KeySerializer
     permission_classes = (permissions.IsAuthenticated, )
-    lookup_field = 'content_id'
+    lookup_url_kwarg = ('content_id', 'username')
+    lookup_field = ('content_id', 'user__username')
 
     def get_serializer_class(self):
         if self.request.method == "PUT":
@@ -145,37 +148,19 @@ class KeyView(mixins.RetrieveModelMixin, mixins.CreateModelMixin, mixins.UpdateM
 
         return self.serializer_class
 
-    def get_object(self):
-        queryset = self.filter_queryset(self.get_queryset())
-
-        # Perform the lookup filtering.
-        lookup_url_kwarg = self.lookup_url_kwarg or self.lookup_field
-
-        assert lookup_url_kwarg in self.kwargs, (
-            'Expected view %s to be called with a URL keyword argument '
-            'named "%s". Fix your URL conf, or set the `.lookup_field` '
-            'attribute on the view correctly.' %
-            (self.__class__.__name__, lookup_url_kwarg)
-        )
-
-        filter_kwargs = {self.lookup_field: self.kwargs[lookup_url_kwarg]}
-        # obj = get_object_or_404(queryset, **filter_kwargs)
-        obj = queryset.filter(**filter_kwargs).first()
-
-        if obj is None:
-            raise Http404
-
-        # May raise a permission denied
-        self.check_object_permissions(self.request, obj)
-
-        return obj
-
     def get(self, request, *args, **kwargs):
-        self.queryset = self.queryset.filter(is_revoked=False, user=self.request.user)
-        return self.retrieve(request, *args, **kwargs)
+        self.queryset = self.queryset.filter(user__username=kwargs.get("username", request.user.username))
+        response = self.retrieve(request, *args, **kwargs)
+        if "key" in response.data and (
+            request.user.username != kwargs.get("username", request.user.username)
+            or
+            response.data.get("is_revoked") is True
+        ):
+            del response.data["key"]
+        return response
 
     def perform_create(self, serializer):
-        serializer.save(content_id=self.content_id, is_revoked=False)
+        serializer.save(content_id=self.content_id, is_revoked=False, user=self.user)
 
     def check_owner(self, request, *args, **kwargs):
         content = get_object_or_404(models.Content.objects.all(), pk=kwargs.get("content_id"))
@@ -188,6 +173,7 @@ class KeyView(mixins.RetrieveModelMixin, mixins.CreateModelMixin, mixins.UpdateM
 
     def post(self, request, *args, **kwargs):
         self.check_owner(request, *args, **kwargs)
+        self.user = authmodels.User.objects.get(username=kwargs.pop("username", request.user.username))
         return self.create(request, *args, **kwargs)
 
     def put(self, request, *args, **kwargs):
