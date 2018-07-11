@@ -101,7 +101,11 @@ class NotesAPIClient(object):
         self.rsa_key = None
 
     def __call__(self, *args, **kwargs):
-        self.get_note(15)
+        for note in self.list_notes():
+            print("Note:")
+            for k, v in note.items():
+                print("  {:10}: {}".format(k, v))
+            print("-" * 20)
 
     def _get_content(self, jsonstring):
         """
@@ -176,6 +180,75 @@ class NotesAPIClient(object):
         self.logger.debug("OK")
         return key
 
+    def upload_aes_key(self, aeskey, pk, username=None):
+        """
+        Upload AES key ``aeskey`` that was used to encrypt note with id ``pk``
+
+        :param aeskey: AES key that was used to encrypt data
+        :type aeskey: :py:obj:`AESKey`
+        :param pk: ID for the encrypted content that was given by the server
+        :type pk: int
+        :param username: Name of the user whose public RSA key is used to encrypt the AES key
+        :return: ``0`` if successful, otherwise ``1``
+        """
+        if username is None:
+            rsakey = self.rsa_key
+        else:
+            rsakey = self.get_rsa_key(username)
+
+        if rsakey is None:
+            self.logger.error("User {} has not uploaded a RSA key, yet.".format(username))
+            return 1
+
+        username = username or self.username
+
+        data = {
+            'key': base64.b64encode(rsakey.encrypt(aeskey.get_secret(), b"0")[0])
+        }
+
+        response = requests.post(
+            urllib.parse.urljoin(self.base_url, "note/{}/setkey/{}/".format(pk, username)),
+            auth=(self.username, self.password),
+            data=data
+        )
+
+        if response.status_code != 201:
+            self.logger.error("Failed to upload AES key: {}".format(response.content))
+            return 1
+
+        self.logger.debug("OK")
+        return 0
+
+    def download_aes_key(self, pk):
+        """
+        Download AES key for note with id ``pk``
+
+        :param pk: ID of the note on server
+        :return: AES key or ``None``
+        :rtype: :py:obj:`AESKey`
+        """
+        response = requests.get(
+            urllib.parse.urljoin(self.base_url, "note/{}/getkey/{}/".format(pk, self.username)),
+            auth=(self.username, self.password)
+        )
+
+        if response.status_code != 200:
+            return None
+
+        content = self._get_content(response.content)
+
+        if "key" not in content:
+            return None
+
+        print("DEBUG", content)
+        content["key"] = self.rsa_key.decrypt(base64.b64decode(content["key"]))
+
+        aeskey = AESKey(
+            iv=content["key"][:AES.block_size],
+            key=content["key"][AES.block_size:]
+        )
+        return aeskey
+
     def add_note(self, title, content):
         """
         Upload an encrypted note
@@ -213,78 +286,12 @@ class NotesAPIClient(object):
 
         return self.upload_aes_key(aeskey, content.get("id"))
 
-    def upload_aes_key(self, aeskey, pk, username=None):
-        """
-        Upload AES key ``aeskey`` that was used to encrypt note with id ``pk``
-
-        :param aeskey: AES key that was used to encrypt data
-        :type aeskey: :py:obj:`AESKey`
-        :param pk: ID for the encrypted content that was given by the server
-        :type pk: int
-        :param username: Name of the user whose public RSA key is used to encrypt the AES key
-        :return: ``0`` if successful, otherwise ``1``
-        """
-        if username is None:
-            rsakey = self.rsa_key
-        else:
-            rsakey = self.get_rsa_key(username)
-
-        username = username or self.username
-
-        data = {
-            'user': username,
-            'key': base64.b64encode(rsakey.encrypt(aeskey.get_secret(), b"0")[0])
-        }
-
-        response = requests.post(
-            urllib.parse.urljoin(self.base_url, "note/{}/setkey/".format(pk)),
-            auth=(self.username, self.password),
-            data=data
-        )
-
-        if response.status_code != 201:
-            self.logger.error("Failed to upload AES key: {}".format(response.content))
-            return 1
-
-        self.logger.debug("OK")
-        return 0
-
-    def download_aes_key(self, pk):
-        """
-        Download AES key for note with id ``pk``
-
-        :param pk: ID of the note on server
-        :return: AES key or ``None``
-        :rtype: :py:obj:`AESKey`
-        """
-        response = requests.get(
-            urllib.parse.urljoin(self.base_url, "note/{}/getkey".format(pk)),
-            auth=(self.username, self.password)
-        )
-
-        if response.status_code != 200:
-            return None
-
-        content = self._get_content(response.content)
-
-        if "key" not in content:
-            return None
-
-        print("DEBUG", content)
-        content["key"] = self.rsa_key.decrypt(base64.b64decode(content["key"]))
-
-        aeskey = AESKey(
-            iv=content["key"][:AES.block_size],
-            key=content["key"][AES.block_size:]
-        )
-        return aeskey
-
     def get_note(self, pk):
         """
         Get note with unencrypted content from server
 
         :param pk: ID of the note on the server
-        :return: dict or ``None``
+        :return: list of dict or ``None``
         """
         if self.rsa_key is None:
             self.rsa_key = self.get_rsa_key()
@@ -306,6 +313,29 @@ class NotesAPIClient(object):
 
         return content
 
+    def list_notes(self, page=1):
+        """
+        Get a list of notes
+
+        :param page: Page which shall be returned
+        :type page: int
+        :return: list of notes or ``None``
+        """
+        # if self.rsa_key is None:
+        #     self.rsa_key = self.get_rsa_key()
+
+        response = requests.get(
+            urllib.parse.urljoin(self.base_url, "getnotes/"),
+            auth=(self.username, self.password),
+            data={'page': page}
+        )
+
+        if response.status_code != 200:
+            self.logger.error("Download of list of notes failed: {}".format(response.status_code))
+            return None
+
+        return self._get_content(response.content).get("results", None)
+
     def share_note(self, pk, username):
         """
         Share AES key with user ``username``
@@ -321,7 +351,24 @@ class NotesAPIClient(object):
         return self.upload_aes_key(aeskey, pk, username)
 
     def unshare_note(self, pk, username):
-        raise NotImplementedError("TODO: Implement it.")
+        """
+        Revoke key to deny access for user ``username``
+
+        :param pk:  ID of the note to be unshared
+        :param username: username of the revoked user
+        :return: ``0`` if successful, otherwise ``1``
+        """
+        response = requests.put(
+            urllib.parse.urljoin(self.base_url, "note/{}/setkey/{}/".format(pk, username)),
+            auth=(self.username, self.password),
+            data={"is_revoked": True}
+        )
+
+        if response.status_code != 200:
+            return 1
+
+        self.logger.debug("OK")
+        return 0
 
     def delete_note(self, pk):
         """
@@ -337,6 +384,37 @@ class NotesAPIClient(object):
         )
 
         if response.status_code != 204:
+            return 1
+
+        self.logger.debug("OK")
+        return 0
+
+    def change_note(self, pk, title, content):
+        """
+        Change contents of note with ID ``pk``
+
+        :param pk: ID of the note on the server
+        :param title: new title
+        :param content: new content (will be encrypted)
+        :return: ``0`` if successful, otherwise ``1``
+        """
+        if self.rsa_key is None:
+            self.rsa_key = self.get_rsa_key()
+
+        aeskey = self.download_aes_key(pk)
+        data = {
+            "title": title,
+            "content": aeskey.encrypt(content)
+        }
+
+        response = requests.put(
+            urllib.parse.urljoin(self.base_url, "note/{}/".format(pk)),
+            auth=(self.username, self.password),
+            data=data
+        )
+
+        if response.status_code != 200:
+            self.logger.error("Failed to update note")
             return 1
 
         self.logger.debug("OK")
