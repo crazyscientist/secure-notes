@@ -11,12 +11,16 @@ class UserSerializer(serializers.ModelSerializer):
 
 class KeySerializer(serializers.ModelSerializer):
     user = serializers.SlugRelatedField(queryset=authmodels.User.objects.all(), slug_field="username")
-    key = serializers.CharField()
-    is_revoked = serializers.BooleanField(write_only=True, required=False)
 
     class Meta:
         model = models.Key
-        fields = ('key', 'user', 'is_revoked')
+        fields = ('key', 'user',)
+
+
+class KeyPutSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = models.Key
+        fields = ("is_revoked", )
 
 
 class ContentSerializer(serializers.ModelSerializer):
@@ -33,3 +37,9 @@ class CryptoKeySerializer(serializers.ModelSerializer):
     class Meta:
         model = models.CryptoKey
         fields = ('private_key', 'public_key', 'username')
+
+
+class CryptoKeyPutSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = models.CryptoKey
+        fields = ('is_revoked', )

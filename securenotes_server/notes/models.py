@@ -23,6 +23,9 @@ class Key(models.Model):
     def __str__(self):
         return "'{}' for {}".format(self.content.title, self.user.username)
 
+    class Meta:
+        unique_together = ('content', 'key', 'user')
+
 
 class CryptoKey(models.Model):
     private_key = models.CharField(max_length=constants.CIPHER_RSA_KEYSIZE, help_text="RSA private key")
@@ -32,3 +35,6 @@ class CryptoKey(models.Model):
 
     def __str__(self):
         return "Key for {}".format(self.user.username)
+
+    class Meta:
+        unique_together = ('private_key', 'public_key', 'user')
