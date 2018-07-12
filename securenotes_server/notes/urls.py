@@ -1,10 +1,12 @@
 from django.urls import path
 from django.conf.urls import include
+from rest_framework.schemas import get_schema_view
 
 from notes import views
 
 
 urlpatterns = [
+    path('schema/', get_schema_view(title="SecureNotes")),
     path('auth/', include('rest_framework.urls')),
     path('key/<str:username>/', views.CryptoView.as_view(), name="rsa_keys"),
     path('getnotes/', views.ContentListView.as_view(), name="getnotes"),

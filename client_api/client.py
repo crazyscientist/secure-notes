@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 
 import base64
+import binascii
 import json
 import logging
 import urllib.parse
 import os
 import sys
 
-from Crypto.PublicKey import RSA
-from Crypto.Cipher import AES
+from Cryptodome.PublicKey import RSA
+from Cryptodome.Cipher import AES, PKCS1_OAEP
+import pkcs7
 import requests
 
 
@@ -25,11 +27,29 @@ class AESKey(object):
     :param logger: A logging instance
     :type logger: :py:obj:`logging.Logger`
     """
+    AES_KEYSIZE = 32
+    AES_SEGMENTSIZE = 128
+
     def __init__(self, key=None, iv=None, logger=None):
-        self.key = key or os.urandom(NotesAPIClient.AES_KEYSIZE)
+        self.key = key or os.urandom(self.AES_KEYSIZE)
         self.iv = iv or os.urandom(AES.block_size)
         self.logger = logger or logging.getLogger("NotesClient.AES")
         self.aeskey = None
+        self.out_type = str
+        # self.pkcs7 = pkcs7.PKCS7Encoder()
+
+    def _return(self, value):
+        if isinstance(value, self.out_type):
+            return value
+
+        return self.out_type(value, "utf8")
+
+    def _in_convert(self, text):
+        self.out_type = type(text)
+        if not isinstance(text, bytes):
+            text = bytes(text, "utf8")
+
+        return text
 
     def reset(self):
         """
@@ -37,7 +57,7 @@ class AESKey(object):
         """
         self.logger.debug("length of key: {}".format(len(self.key)))
         self.logger.debug("length of iv: {}".format(len(self.iv)))
-        self.aeskey = AES.new(self.key, AES.MODE_CFB, self.iv)
+        self.aeskey = AES.new(self.key, AES.MODE_CFB, self.iv, segment_size=self.AES_SEGMENTSIZE)
 
     def encrypt(self, text):
         """
@@ -52,8 +72,10 @@ class AESKey(object):
         :return: Base64-encoded and encrypted text
         :rtype: byte
         """
+        text = self._in_convert(text)
         self.reset()
-        return base64.b64encode(self.aeskey.encrypt(text))
+        # return base64.b64encode(self.aeskey.encrypt(self.pkcs7.encode(text)))
+        return self._return(base64.b64encode(self.aeskey.encrypt(text)))
 
     def decrypt(self, text):
         """
@@ -68,8 +90,10 @@ class AESKey(object):
         :return: decoded and decrypted text
         :rtype: byte
         """
+        text = self._in_convert(text)
         self.reset()
-        return self.aeskey.decrypt(base64.b64decode(text))
+        # return self.pkcs7.decode(self.aeskey.decrypt(base64.b64decode(text)))
+        return self._return(self.aeskey.decrypt(base64.b64decode(text)))
 
     def get_secret(self):
         """
@@ -86,7 +110,6 @@ class NotesAPIClient(object):
     """
     base_url = "http://localhost:8000/notes/"
     RSA_KEYSIZE = 2048
-    AES_KEYSIZE = 32
 
     def __init__(self, username, password, rsa_password=None, logger=None):
         self.logger = logger
@@ -153,6 +176,9 @@ class NotesAPIClient(object):
 
         .. note:: If replacing the upstream keys, ensure that encrypted data is re-crypted!
 
+        .. hint::
+            The generated RSA private and public keys are ready for use e.g. with the OpenSSL command line tool.
+
         :return: :py:obj:`Crypto.PublicKey.RSA._RSAobj` or ``None`
         """
         url = urllib.parse.urljoin(self.base_url, "key/{}/".format(self.username))
@@ -201,9 +227,10 @@ class NotesAPIClient(object):
             return 1
 
         username = username or self.username
+        key = PKCS1_OAEP.new(rsakey)
 
         data = {
-            'key': base64.b64encode(rsakey.encrypt(aeskey.get_secret(), b"0")[0])
+            'key': base64.b64encode(key.encrypt(aeskey.get_secret()))
         }
 
         response = requests.post(
@@ -240,8 +267,8 @@ class NotesAPIClient(object):
         if "key" not in content:
             return None
 
-        print("DEBUG", content)
-        content["key"] = self.rsa_key.decrypt(base64.b64decode(content["key"]))
+        key = PKCS1_OAEP.new(self.rsa_key)
+        content["key"] = key.decrypt(base64.b64decode(content["key"]))
 
         aeskey = AESKey(
             iv=content["key"][:AES.block_size],
@@ -321,8 +348,8 @@ class NotesAPIClient(object):
         :type page: int
         :return: list of notes or ``None``
         """
-        # if self.rsa_key is None:
-        #     self.rsa_key = self.get_rsa_key()
+        if self.rsa_key is None:
+            self.rsa_key = self.get_rsa_key()
 
         response = requests.get(
             urllib.parse.urljoin(self.base_url, "getnotes/"),
@@ -334,7 +361,16 @@ class NotesAPIClient(object):
             self.logger.error("Download of list of notes failed: {}".format(response.status_code))
             return None
 
-        return self._get_content(response.content).get("results", None)
+        results = self._get_content(response.content).get("results", None)
+        for note in results:
+            aeskey = self.download_aes_key(note["id"])
+            if isinstance(aeskey, AESKey):
+                note["key"] = base64.b64encode(aeskey.get_secret()[AES.block_size:])
+                note["iv"] = base64.b64encode(aeskey.get_secret()[:AES.block_size])
+                note["key-hex"] = binascii.hexlify(aeskey.get_secret()[AES.block_size:])
+                note["iv-hex"] = binascii.hexlify(aeskey.get_secret()[:AES.block_size])
+                note["decrypted"] = aeskey.decrypt(note.get("content", ""))
+        return results
 
     def share_note(self, pk, username):
         """

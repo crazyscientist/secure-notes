@@ -7,7 +7,7 @@ from notes import constants
 # Create your models here.
 class Content(models.Model):
     title = models.CharField(max_length=250, help_text="Plaintext title", null=True, default=None)
-    content = models.TextField(help_text="Encrypted content", null=True, default=None)
+    content = models.TextField(help_text="Encrypted content. Use AES256 with CFB mode and block size 128!", null=True, default=None)
     owner = models.ForeignKey(authmodels.User, help_text="Owner of this object", null=False, blank=False, on_delete=models.CASCADE)
 
     def __str__(self):
