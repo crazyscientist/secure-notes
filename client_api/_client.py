@@ -10,7 +10,6 @@ import sys
 
 from Cryptodome.PublicKey import RSA
 from Cryptodome.Cipher import AES, PKCS1_OAEP
-import pkcs7
 import requests
 
 
@@ -36,7 +35,6 @@ class AESKey(object):
         self.logger = logger or logging.getLogger("NotesClient.AES")
         self.aeskey = None
         self.out_type = str
-        # self.pkcs7 = pkcs7.PKCS7Encoder()
 
     def _return(self, value):
         if isinstance(value, self.out_type):
@@ -74,7 +72,6 @@ class AESKey(object):
         """
         text = self._in_convert(text)
         self.reset()
-        # return base64.b64encode(self.aeskey.encrypt(self.pkcs7.encode(text)))
         return self._return(base64.b64encode(self.aeskey.encrypt(text)))
 
     def decrypt(self, text):
@@ -92,7 +89,6 @@ class AESKey(object):
         """
         text = self._in_convert(text)
         self.reset()
-        # return self.pkcs7.decode(self.aeskey.decrypt(base64.b64decode(text)))
         return self._return(self.aeskey.decrypt(base64.b64decode(text)))
 
     def get_secret(self):
