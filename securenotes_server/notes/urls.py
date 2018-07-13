@@ -7,7 +7,9 @@ from notes import views
 
 urlpatterns = [
     path('schema/', get_schema_view(title="SecureNotes")),
-    path('auth/', include('rest_framework.urls')),
+    # path('auth/', include('rest_framework.urls')),
+    path('auth/', include('rest_auth.urls')),
+    path('auth/registration/', include('rest_auth.registration.urls')),
     path('key/<str:username>/', views.CryptoView.as_view(), name="rsa_keys"),
     path('getnotes/', views.ContentListView.as_view(), name="getnotes"),
     path('note/<int:pk>/', views.ContentView.as_view(), name="note"),
