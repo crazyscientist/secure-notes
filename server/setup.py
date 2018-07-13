@@ -10,7 +10,7 @@ setup(
     description="Web service for storing and sharing encrypted contents",
     url="https://github.com/crazyscientist/secure-notes",
     packages=find_packages(),
-    scripts=["manage.py"],
+    scripts=["securenotes_server/manage.py"],
     python_requires=">=3.5",
     install_requires=['django', 'coreapi', 'django-extensions', 'djangorestframework', 'django-rest-auth', 'django-allauth']
 )
