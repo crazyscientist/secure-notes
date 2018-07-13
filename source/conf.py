@@ -18,6 +18,7 @@ import django
 # sys.path.insert(0, os.path.abspath('.'))
 sys.path.insert(0, os.path.abspath('..'))
 sys.path.insert(1, os.path.abspath('../securenotes_server'))
+sys.path.insert(2, os.path.abspath('../clients/api'))
 os.environ["DJANGO_SETTINGS_MODULE"] = "securenotes_server.settings"
 django.setup()
 

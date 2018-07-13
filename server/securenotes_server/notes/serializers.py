@@ -17,6 +17,14 @@ class KeySerializer(serializers.ModelSerializer):
         fields = ('key', 'user', 'is_revoked')
 
 
+class KeyListSerializer(serializers.ModelSerializer):
+    user = serializers.SlugRelatedField(read_only=True, slug_field="username")
+
+    class Meta:
+        model = models.Key
+        fields = ('user', 'is_revoked', 'content')
+
+
 class KeyPutSerializer(serializers.ModelSerializer):
     class Meta:
         model = models.Key
@@ -29,6 +37,13 @@ class ContentSerializer(serializers.ModelSerializer):
     class Meta:
         model = models.Content
         fields = ('title', 'content', 'id', 'owner')
+
+
+class ContentListSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = models.Content
+        fields = ('title', 'id')
 
 
 class CryptoKeySerializer(serializers.ModelSerializer):

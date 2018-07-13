@@ -520,3 +520,29 @@ class NotesTest(TestCase):
         self.assertEqual(response.status_code, 200)
         content = json.loads(response.content)
         self.assertEqual(content.get("count"), 2)
+
+    def test_aeskey_list(self):
+        u2 = authmodels.User.objects.create(username="foo", password="bar")
+        key = models.Key.objects.create(key="secret", user=self.testuser, content=self.testnote)
+        key2 = models.Key.objects.create(key="secret2", user=u2, content=self.testnote)
+
+        self.client.force_authenticate(user=self.testuser)
+        response = self.client.get(
+            reverse("aes_keys_list", args=[self.testnote.pk,])
+        )
+        self.assertEqual(response.status_code, 200)
+        content = json.loads(response.content)
+        self.assertEqual(content.get("count", -1), 2)
+
+    def test_aeskey_list_unauth(self):
+        u2 = authmodels.User.objects.create(username="foo", password="bar")
+        u3 = authmodels.User.objects.create(username="foo2", password="bar")
+        key = models.Key.objects.create(key="secret", user=self.testuser, content=self.testnote)
+        key2 = models.Key.objects.create(key="secret2", user=u2, content=self.testnote)
+
+        for U in [u2, u3]:
+            self.client.force_authenticate(user=U)
+            response = self.client.get(
+                reverse("aes_keys_list", args=[self.testnote.pk,])
+            )
+            self.assertEqual(response.status_code, 403)
