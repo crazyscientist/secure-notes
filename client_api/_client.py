@@ -155,7 +155,10 @@ class NotesAPIClient(object):
 
         if response.status_code != 200:
             self.logger.error("Cannot get rsa keys: {}".format(response.status_code))
-            return None
+            if self.username == username:
+                return self.create_rsa_key()
+            else:
+                return None
 
         content = self._get_content(response.content)
         if content.get("private_key"):
@@ -348,9 +351,8 @@ class NotesAPIClient(object):
             self.rsa_key = self.get_rsa_key()
 
         response = requests.get(
-            urllib.parse.urljoin(self.base_url, "getnotes/"),
+            urllib.parse.urljoin(self.base_url, "getnotes/?page={}".format(page)),
             auth=(self.username, self.password),
-            data={'page': page}
         )
 
         if response.status_code != 200:
@@ -358,14 +360,14 @@ class NotesAPIClient(object):
             return None
 
         results = self._get_content(response.content).get("results", None)
-        for note in results:
-            aeskey = self.download_aes_key(note["id"])
-            if isinstance(aeskey, AESKey):
-                note["key"] = base64.b64encode(aeskey.get_secret()[AES.block_size:])
-                note["iv"] = base64.b64encode(aeskey.get_secret()[:AES.block_size])
-                note["key-hex"] = binascii.hexlify(aeskey.get_secret()[AES.block_size:])
-                note["iv-hex"] = binascii.hexlify(aeskey.get_secret()[:AES.block_size])
-                note["decrypted"] = aeskey.decrypt(note.get("content", ""))
+        # for note in results:
+        #     aeskey = self.download_aes_key(note["id"])
+        #     if isinstance(aeskey, AESKey):
+        #         note["key"] = base64.b64encode(aeskey.get_secret()[AES.block_size:])
+        #         note["iv"] = base64.b64encode(aeskey.get_secret()[:AES.block_size])
+        #         note["key-hex"] = binascii.hexlify(aeskey.get_secret()[AES.block_size:])
+        #         note["iv-hex"] = binascii.hexlify(aeskey.get_secret()[:AES.block_size])
+        #         note["decrypted"] = aeskey.decrypt(note.get("content", ""))
         return results
 
     def share_note(self, pk, username):
@@ -434,6 +436,10 @@ class NotesAPIClient(object):
             self.rsa_key = self.get_rsa_key()
 
         aeskey = self.download_aes_key(pk)
+        if aeskey is None:
+            self.logger.error("Failed to retrieve AES key")
+            return 1
+
         data = {
             "title": title,
             "content": aeskey.encrypt(content)
@@ -451,6 +457,24 @@ class NotesAPIClient(object):
 
         self.logger.debug("OK")
         return 0
+
+    def list_shares(self, pk, page=1):
+        """
+        Show all users that have been granted acces to note with ID ``pk``
+
+        :param pk: ID of the note to be queried
+        :param page: If results are paginated, show this page
+        :return: list or None
+        """
+        response = requests.get(
+            urllib.parse.urljoin(self.base_url, "note/{}/getkeys/?page={}".format(pk, page)),
+            auth=(self.username, self.password)
+        )
+
+        if response.status_code != 200:
+            return None
+
+        return self._get_content(response.content).get("results", None)
 
 
 if __name__ == '__main__':

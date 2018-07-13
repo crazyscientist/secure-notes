@@ -83,7 +83,7 @@ class CryptoView(mixins.CreateModelMixin, mixins.RetrieveModelMixin, mixins.Dest
 class ContentListView(mixins.ListModelMixin, generics.GenericAPIView):
     queryset = models.Content.objects.distinct().order_by("pk")
     permission_classes = (permissions.IsAuthenticated,)
-    serializer_class = serializers.ContentSerializer
+    serializer_class = serializers.ContentListSerializer
 
     def get(self, request, *args, **kwargs):
         self.queryset = self.queryset.filter(aeskey__user__username=request.user.username).filter(aeskey__is_revoked=False)
@@ -133,6 +133,28 @@ class ContentView(mixins.UpdateModelMixin, mixins.DestroyModelMixin, mixins.Retr
     def delete(self, request, *args, **kwargs):
         self.check_owner(request, *args, **kwargs)
         return self.destroy(request, *args, **kwargs)
+
+
+class KeyListView(mixins.ListModelMixin, generics.GenericAPIView):
+    queryset = models.Key.objects.all().order_by("is_revoked")
+    serializer_class = serializers.KeyListSerializer
+    permission_classes = (permissions.IsAuthenticated, )
+    lookup_field = 'content__pk'
+    lookup_url_kwarg = 'content_id'
+
+    def check_owner(self, request, *args, **kwargs):
+        content = get_object_or_404(models.Content.objects.all(), pk=kwargs.get("content_id"))
+        if content is None:
+            raise Http404
+
+        if request.user != content.owner:
+            raise PermissionDenied("You are not the owner")
+        self.content_id = int(kwargs.get("content_id", -1))
+
+    def get(self, request, *args, **kwargs):
+        self.check_owner(request, *args, **kwargs)
+        self.queryset = self.queryset.filter(content_id=kwargs.get("content_id"))
+        return self.list(request, *args, **kwargs)
 
 
 class KeyView(mixins.RetrieveModelMixin, mixins.CreateModelMixin, mixins.UpdateModelMixin, mixins.DestroyModelMixin, mymixins.MultipleFieldLookupMixin, viewsets.GenericViewSet):
