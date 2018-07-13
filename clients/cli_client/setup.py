@@ -4,13 +4,13 @@ from setuptools import setup, find_packages
 
 
 setup(
-    name='securenotes-server',
+    name='securenotes-client-cli',
     version='0.1',
     author="Andreas Pritschet",
-    description="Web service for storing and sharing encrypted contents",
+    description="Command line client for SecureNotes",
     url="https://github.com/crazyscientist/secure-notes",
     packages=find_packages(),
-    scripts=["manage.py"],
     python_requires=">=3.5",
-    install_requires=['django', 'coreapi', 'django-extensions', 'djangorestframework']
+    scripts=["securenotes.py",],
+    install_requires=['securenotes-client-api']
 )

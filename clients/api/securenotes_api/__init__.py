@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import base64
-import binascii
 import json
 import logging
 import urllib.parse
@@ -162,9 +161,17 @@ class NotesAPIClient(object):
 
         content = self._get_content(response.content)
         if content.get("private_key"):
-            key = RSA.importKey(content.get("private_key"), self.rsa_password)
+            try:
+                key = RSA.importKey(content.get("private_key"), self.rsa_password)
+            except:
+                self.logger.error("Cannot unlock private key")
+                return None
         elif content.get("public_key"):
-            key = RSA.importKey(content.get("public_key"))
+            try:
+                key = RSA.importKey(content.get("public_key"))
+            except:
+                self.logger.error("Cannot import public key")
+                return None
 
         self.logger.debug("OK")
         return key
@@ -266,6 +273,9 @@ class NotesAPIClient(object):
         if "key" not in content:
             return None
 
+        if self.rsa_key is None:
+            return None
+
         key = PKCS1_OAEP.new(self.rsa_key)
         content["key"] = key.decrypt(base64.b64decode(content["key"]))
 
@@ -360,14 +370,6 @@ class NotesAPIClient(object):
             return None
 
         results = self._get_content(response.content).get("results", None)
-        # for note in results:
-        #     aeskey = self.download_aes_key(note["id"])
-        #     if isinstance(aeskey, AESKey):
-        #         note["key"] = base64.b64encode(aeskey.get_secret()[AES.block_size:])
-        #         note["iv"] = base64.b64encode(aeskey.get_secret()[:AES.block_size])
-        #         note["key-hex"] = binascii.hexlify(aeskey.get_secret()[AES.block_size:])
-        #         note["iv-hex"] = binascii.hexlify(aeskey.get_secret()[:AES.block_size])
-        #         note["decrypted"] = aeskey.decrypt(note.get("content", ""))
         return results
 
     def share_note(self, pk, username):

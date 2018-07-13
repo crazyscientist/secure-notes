@@ -12,4 +12,5 @@ Web service for storing encrypted notes and files
 
 ## Contents
 - Web service written in Python with Django and Django REST Framework
-- Example client
+- Example API wrapper
+- Example CLI client

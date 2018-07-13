@@ -11,6 +11,8 @@ Welcome to SecureNotes's documentation!
    :caption: Contents:
 
    views
+   models
+   api
    client
 
 Indices and tables

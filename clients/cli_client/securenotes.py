@@ -7,7 +7,7 @@ import os
 import pathlib
 import sys
 
-import _client
+import securenotes_api
 
 
 class BaseCommand(object):
@@ -20,9 +20,10 @@ class BaseCommand(object):
         return self.run()
 
     def _init_client(self):
-        self.client = _client.NotesAPIClient(
+        self.client = securenotes_api.NotesAPIClient(
             self.namespace.get("username"),
-            self.namespace.get("password")
+            self.namespace.get("password"),
+            self.namespace.get("passphrase"),
         )
         self.client.base_url = self.namespace.get("host", self.client.base_url)
 
@@ -289,6 +290,11 @@ def get_argument_parser(config):
         default=config["DEFAULT"].get("password")
     )
     authgroup.add_argument(
+        "-P", "--passphrase",
+        help="Phassphrase for encryption; if omitted, password is used",
+        default=config["DEFAULT"].get("passphrase")
+    )
+    authgroup.add_argument(
         "-H", "--host",
         default=config["DEFAULT"].get("host", "http://localhost:8000/notes/"),
         help="URL of server"
@@ -328,7 +334,7 @@ if __name__ == '__main__':
         logging.disable(logging.CRITICAL)
 
     if namespace.get("save_as_defaults"):
-        for key in ["username", "password", "host"]:
+        for key in ["username", "password", "passphrase", "host"]:
             config["DEFAULT"][key] = namespace.get(key, config["DEFAULT"].get(key, None))
         with open(configfile, "w") as cfh:
             config.write(cfh)
