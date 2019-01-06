@@ -1,0 +1,7 @@
+django
+coreapi
+django-extensions
+djangorestframework
+django-rest-auth
+django-allauth
+sphinx
